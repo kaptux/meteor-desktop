@@ -495,26 +495,41 @@ export default class App {
     startFullStackServer(cb) {
         const { spawn } = require('child_process');
 
-        const localAppUrl = 'http://localhost:8080';
+        const env = {
+            ROOT_URL: 'http://localhost:3000',
+            PORT: 3000,
+        };
+
+        if (this.settings.serverEnv) {
+            this.l.info('fullStack: setting env vars ...');
+            Object.assign(env, this.settings.serverEnv);
+        }
+
+        this.l.info(`fullStack: startin local server at ${env.ROOT_URL}`);
 
         this.fullStackServer = spawn('./node.exe', ['./meteor/main.js'], {
             cwd: process.cwd(),
-            env: {
-                MONGO_URL: 'mongodb+srv://todo_user_1:todo_pass_1@cluster0-qn2ny.mongodb.net/todos',
-                ROOT_URL: localAppUrl,
-                PORT: '8080'
-            }
+            env
         });
 
+        const MAX_NUM_ATTEMPTS = 15;
+        let attempt = 0;
         const checkServerRunning = setInterval(() => {
-            this.l.info(`fullStack: ping ${localAppUrl}`);
-            request(localAppUrl, (error, response) => {
+            this.l.info(`fullStack: ping ${env.ROOT_URL}`);
+            attempt += 1;
+            request(env.ROOT_URL, (error, response) => {
                 if (!error && response.statusCode === 200) {
-                    this.l.info(`fullStack: localServer started at ${localAppUrl}`);
                     clearInterval(checkServerRunning);
-                    cb(8080);
+
+                    this.l.info(`fullStack: localServer started at ${env.ROOT_URL}`);
+                    cb(env.PORT);
                 }
             });
+
+            if (attempt > MAX_NUM_ATTEMPTS) {
+                clearInterval(checkServerRunning);
+                this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
+            }
         }, 1000);
     }
 
