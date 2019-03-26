@@ -6,6 +6,7 @@ import { EventEmitter as Events } from 'events';
 import path from 'path';
 import fs from 'fs-plus';
 import shell from 'shelljs';
+import request from 'request';
 import assignIn from 'lodash/assignIn';
 import Module from './modules/module';
 import LoggerManager from './loggerManager';
@@ -85,7 +86,9 @@ export default class App {
         this.webContents = null;
         this.modules = {};
         this.localServer = null;
+        this.fullStackServer = null;
         this.currentPort = null;
+        this.isFullStack = process.env.FULL_STACK;
 
         if (this.isProduction() && !this.settings.prodDebug) {
             // In case anything depends on this...
@@ -109,8 +112,18 @@ export default class App {
         this.eventsBus.on('startupDidComplete', this.handleAppStartup.bind(this, true));
         this.eventsBus.on('revertVersionReady', () => { this.meteorAppVersionChange = true; });
 
-        this.app.on('ready', this.onReady.bind(this));
-        this.app.on('window-all-closed', () => this.app.quit());
+        if (this.isFullStack) {
+            this.app.on('ready', this.onReadyFullStack.bind(this));
+        } else {
+            this.app.on('ready', this.onReady.bind(this));
+        }
+
+        this.app.on('window-all-closed', () => {
+            this.app.quit();
+            if (this.fullStackServer) {
+                this.fullStackServer.kill('SIGINT');
+            }
+        });
     }
 
     /**
@@ -279,7 +292,7 @@ export default class App {
     loadModules() {
         // Load internal modules. Scan for files in /modules.
         shell.ls(join(__dirname, 'modules', '*.js')).forEach((file) => {
-            if (!~file.indexOf('module.js')) {
+            if (!~file.indexOf('module.js') && (!~file.indexOf('autoupdate.js') || this.isProduction())) {
                 this.loadModule(true, file);
             }
         });
@@ -290,7 +303,7 @@ export default class App {
             moduleDirectories = fs.readdirSync(join(this.desktopPath, 'modules'));
         } catch (err) {
             if (err.code === 'ENOENT') {
-                this.l.debug(`not loading custom app modules because .desktop/modules isn't a directory`);
+                this.l.debug('not loading custom app modules because .desktop/modules isn\'t a directory');
             } else {
                 throw err;
             }
@@ -453,6 +466,56 @@ export default class App {
             return Promise.reject(e);
         }
         return Promise.all(promises);
+    }
+
+    onReadyFullStack() {
+        this.l.info('fullStack: ready fired');
+        this.l.info(`fullStack: isProduction ${this.isProduction()}`);
+
+        this.emit('beforePluginsLoad');
+
+        this.loadPlugins();
+
+        this.emit('beforeModulesLoad');
+
+        this.loadModules();
+
+        this.emit('beforeDesktopJsLoad');
+
+        // desktopLoaded event in emitted from the inside of loadDesktopJs
+        this.loadDesktopJs();
+
+        this.emit('beforeLocalServerInit');
+
+        this.startFullStackServer(this.onServerFullstackReady.bind(this));
+
+        this.emit('afterInitialization');
+    }
+
+    startFullStackServer(cb) {
+        const { spawn } = require('child_process');
+
+        const localAppUrl = 'http://localhost:8080';
+
+        this.fullStackServer = spawn('./node.exe', ['./meteor/main.js'], {
+            cwd: process.cwd(),
+            env: {
+                MONGO_URL: 'mongodb+srv://todo_user_1:todo_pass_1@cluster0-qn2ny.mongodb.net/todos',
+                ROOT_URL: localAppUrl,
+                PORT: '8080'
+            }
+        });
+
+        const checkServerRunning = setInterval(() => {
+            this.l.info(`fullStack: ping ${localAppUrl}`);
+            request(localAppUrl, (error, response) => {
+                if (!error && response.statusCode === 200) {
+                    this.l.info(`fullStack: localServer started at ${localAppUrl}`);
+                    clearInterval(checkServerRunning);
+                    cb(8080);
+                }
+            });
+        }, 1000);
     }
 
 
@@ -642,6 +705,79 @@ export default class App {
                     }, 100);
                 }
             );
+    }
+
+    /**
+     * Starts the app fullstack loading in the browser.
+     * @param {number} port - port on which our local server is listening
+     */
+    onServerFullstackReady(port) {
+        const windowSettings = {
+            width: 800,
+            height: 600,
+            webPreferences: {},
+            show: false
+        };
+
+        if (process.env.METEOR_DESKTOP_SHOW_MAIN_WINDOW_ON_STARTUP) {
+            windowSettings.show = true;
+        }
+
+        assignIn(windowSettings, this.settings.window);
+
+        // Emit windowSettings so that it can be modified if that is needed in any of the modules.
+        // I do not really like, that it can modified indirectly but until 1.0 it needs to stay
+        // this way.
+        this.emit('windowSettings', windowSettings);
+
+        windowSettings.webPreferences.nodeIntegration = false; // node integration must to be off
+        windowSettings.webPreferences.preload = join(__dirname, 'preload.js');
+
+        this.currentPort = port;
+
+        this.window = new BrowserWindow(windowSettings);
+        this.window.on('closed', () => {
+            this.window = null;
+        });
+
+        this.webContents = this.window.webContents;
+
+        if (this.settings.devtron && !this.isProduction()) {
+            this.webContents.on('did-finish-load', () => {
+                // Print some fancy status to the console if in development.
+                this.webContents.executeJavaScript(`
+                console.log('%c   meteor-desktop   ',
+                \`background:linear-gradient(#47848F,#DE4B4B);border:1px solid #3E0E02;
+                color:#fff;display:block;text-shadow:0 3px 0 rgba(0,0,0,0.5);
+                box-shadow:0 1px 0 rgba(255,255,255,0.4) inset,0 5px 3px -5px rgba(0,0,0,0.5),
+                0 -13px 5px -10px rgba(255,255,255,0.4) inset;
+                line-height:20px;text-align:center;font-weight:700;font-size:20px\`);
+                console.log(\`%cdesktop version: ${this.settings.desktopVersion}\\n` +
+                    `desktop compatibility version: ${this.settings.compatibilityVersion}\\n` +
+                    ', \'font-size: 9px;color:#222\');');
+            });
+        }
+
+        this.emit('windowCreated', this.window);
+
+        // Here we are catching reloads triggered by hot code push.
+        this.webContents.on('will-navigate', (event, url) => {
+            if (this.meteorAppVersionChange) {
+                this.l.debug(`will-navigate event to ${url}, assuming that this is HCP refresh`);
+                // We need to block it.
+                event.preventDefault();
+                this.meteorAppVersionChange = false;
+                this.updateToNewVersion();
+            }
+        });
+
+        // The app was loaded.
+        this.webContents.on('did-stop-loading', () => {
+            this.l.debug('received did-stop-loading');
+            this.handleAppStartup(false);
+        });
+
+        this.webContents.loadURL(`http://localhost:${port}`);
     }
 
     handleAppStartup(startupDidCompleteEvent) {
