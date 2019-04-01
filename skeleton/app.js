@@ -495,16 +495,28 @@ export default class App {
     }
 
 
-    extractNodeModules() {
-        const appRootDir = app.getAppPath();
-        const nodeModulesDir = join(appRootDir, 'node_modules');
+    withNodeExec(cb) {
+        const execPath = process.platform === 'win32' ? 'node.exe' : 'node';
+        const cwd = process.cwd();
 
-        this.l.info(`fullStack: checking node_moduler dir: ${nodeModulesDir}`);
-        if (!fs.existsSync(nodeModulesDir)) {
-            this.l.info(`fullStack: extracting node_modules dir from ${join(appRootDir, 'app.asar')}`);
-            asar.extractAll(join(appRootDir, 'app.asar'), join(appRootDir, 'app'));
-            shell.mv(join(appRootDir, 'app', 'node_modules'), appRootDir);
-            shell.rm('-rf', join(appRootDir, 'app'));
+        if (!fs.existsSync(join(cwd, execPath))) {
+            const downloadUrlRoot = 'https://nodejs.org/download/release/';
+            const platform = process.platform === 'win32' ? 'win' : process.platform;
+            const { nodeVersion } = this.settings;
+            const extension = process.platform === 'win32' ? '.zip' : '.tar.gz';
+
+            const zipName = `node-${nodeVersion}-${platform}-${process.arch}`;
+            const downloadUrl = `${downloadUrlRoot}${nodeVersion}/${zipName}${extension}`;
+
+            if (!fs.existsSync(join(cwd, zipName))) {
+                this.l.info(`fullStack: download url from ${downloadUrl}`);
+                const stream = request(downloadUrl).pipe(unzipper.Extract({ path: cwd }));
+                stream.on('finish', () => cb(join(zipName, execPath)));
+            } else {
+                cb(join(zipName, execPath));
+            }
+        } else {
+            cb(execPath);
         }
     }
 

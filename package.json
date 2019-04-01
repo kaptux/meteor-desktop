@@ -1,6 +1,6 @@
 {
   "name": "@kaptux/meteor-desktop",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "bin": {
     "meteor-desktop": "dist/bin/cli.js"
   },
