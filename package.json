@@ -1,5 +1,5 @@
 {
-  "name": "meteor-desktop",
+  "name": "@kaptux/meteor-desktop",
   "version": "2.0.1",
   "bin": {
     "meteor-desktop": "dist/bin/cli.js"
@@ -30,7 +30,7 @@
     "generate-docs": "jsdoc2md skeleton/preload.js > docs/api/desktop.md && jsdoc2md skeleton/modules/module.js > docs/api/module.md",
     "update-locks": "(rmdir /S /Q node_modules || rm -rf node_modules || echo) && yarn && (rmdir /S /Q node_modules || rm -rf node_modules) && npm i"
   },
-  "author": "Bartosz Wojtkowiak <bartosz@wojtkowiak.it>",
+  "author": "Ramón Otero <kaptux@gmail.com>",
   "license": "MIT",
   "devDependencies": {
     "@babel/cli": "7.0.0-beta.40",
@@ -91,7 +91,8 @@
     "semver": "5.5.1",
     "shelljs": "0.8.2",
     "single-line-log": "1.1.2",
-    "terser": "3.8.2"
+    "terser": "3.8.2",
+    "unzipper": "^0.9.11"
   },
   "peerDependencies": {
     "electron-packager": "*",
@@ -100,7 +101,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/wojtkowiak/meteor-desktop"
+    "url": "https://github.com/kaptux/meteor-desktop"
   },
   "keywords": [
     "electron",
@@ -126,7 +127,7 @@
     "all": true
   },
   "bugs": {
-    "url": "https://github.com/wojtkowiak/meteor-desktop/issues"
+    "url": "https://github.com/kaptux/meteor-desktop/issues"
   },
-  "homepage": "https://github.com/wojtkowiak/meteor-desktop"
+  "homepage": "https://github.com/kaptux/meteor-desktop"
 }

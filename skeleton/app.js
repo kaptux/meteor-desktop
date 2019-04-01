@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs-plus';
 import shell from 'shelljs';
 import request from 'request';
+import unzipper from 'unzipper';
+import asar from 'asar';
 import assignIn from 'lodash/assignIn';
 import Module from './modules/module';
 import LoggerManager from './loggerManager';
@@ -88,7 +90,7 @@ export default class App {
         this.localServer = null;
         this.fullStackServer = null;
         this.currentPort = null;
-        this.isFullStack = process.env.FULL_STACK;
+        this.isFullStack = this.settings.buildType === 'fullStack';
 
         if (this.isProduction() && !this.settings.prodDebug) {
             // In case anything depends on this...
@@ -292,7 +294,7 @@ export default class App {
     loadModules() {
         // Load internal modules. Scan for files in /modules.
         shell.ls(join(__dirname, 'modules', '*.js')).forEach((file) => {
-            if (!~file.indexOf('module.js') && (!~file.indexOf('autoupdate.js') || this.isProduction())) {
+            if (!~file.indexOf('module.js') && (!~file.indexOf('autoupdate.js') || !this.isFullStack)) {
                 this.loadModule(true, file);
             }
         });
@@ -482,7 +484,7 @@ export default class App {
 
         this.emit('beforeDesktopJsLoad');
 
-        // desktopLoaded event in emitted from the inside of loadDesktopJs
+        // desktopLoaded event is emitted from the inside of loadDesktopJs
         this.loadDesktopJs();
 
         this.emit('beforeLocalServerInit');
@@ -490,6 +492,20 @@ export default class App {
         this.startFullStackServer(this.onServerFullstackReady.bind(this));
 
         this.emit('afterInitialization');
+    }
+
+
+    extractNodeModules() {
+        const appRootDir = app.getAppPath();
+        const nodeModulesDir = join(appRootDir, 'node_modules');
+
+        this.l.info(`fullStack: checking node_moduler dir: ${nodeModulesDir}`);
+        if (!fs.existsSync(nodeModulesDir)) {
+            this.l.info(`fullStack: extracting node_modules dir from ${join(appRootDir, 'app.asar')}`);
+            asar.extractAll(join(appRootDir, 'app.asar'), join(appRootDir, 'app'));
+            shell.mv(join(appRootDir, 'app', 'node_modules'), appRootDir);
+            shell.rm('-rf', join(appRootDir, 'app'));
+        }
     }
 
     startFullStackServer(cb) {
@@ -505,32 +521,39 @@ export default class App {
             Object.assign(env, this.settings.serverEnv);
         }
 
-        this.l.info(`fullStack: startin local server at ${env.ROOT_URL}`);
-
-        this.fullStackServer = spawn('./node.exe', ['./meteor/main.js'], {
-            cwd: process.cwd(),
-            env
-        });
-
-        const MAX_NUM_ATTEMPTS = 15;
-        let attempt = 0;
-        const checkServerRunning = setInterval(() => {
-            this.l.info(`fullStack: ping ${env.ROOT_URL}`);
-            attempt += 1;
-            request(env.ROOT_URL, (error, response) => {
-                if (!error && response.statusCode === 200) {
-                    clearInterval(checkServerRunning);
-
-                    this.l.info(`fullStack: localServer started at ${env.ROOT_URL}`);
-                    cb(env.PORT);
-                }
+        this.withNodeExec((execPath) => {
+            this.l.info(`fullStack: node exec locate at ${execPath}`);
+            this.l.info(`fullStack: startin local server at ${env.ROOT_URL}`);
+            this.fullStackServer = spawn(execPath, [join(app.getAppPath(), 'meteor', 'main.js')], {
+                cwd: process.cwd(),
+                env
             });
 
-            if (attempt > MAX_NUM_ATTEMPTS) {
-                clearInterval(checkServerRunning);
-                this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
-            }
-        }, 1000);
+            this.fullStackServer.stderr.on('data', (chunk) => {
+                const line = chunk.toString('UTF-8');
+                this.l.error(`fullStackServer: ${line}`);
+            });
+
+            const MAX_NUM_ATTEMPTS = 60;
+            let attempt = 0;
+            const checkServerRunning = setInterval(() => {
+                this.l.info(`fullStack: ping ${env.ROOT_URL}`);
+                attempt += 1;
+                request(env.ROOT_URL, (error, response) => {
+                    if (!error && response.statusCode === 200) {
+                        clearInterval(checkServerRunning);
+
+                        this.l.info(`fullStack: localServer started at ${env.ROOT_URL}`);
+                        cb(env.PORT);
+                    }
+                });
+
+                if (attempt > MAX_NUM_ATTEMPTS) {
+                    clearInterval(checkServerRunning);
+                    this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
+                }
+            }, 1000);
+        });
     }
 
 
