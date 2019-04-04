@@ -7,8 +7,6 @@ import path from 'path';
 import fs from 'fs-plus';
 import shell from 'shelljs';
 import request from 'request';
-import unzipper from 'unzipper';
-import asar from 'asar';
 import assignIn from 'lodash/assignIn';
 import Module from './modules/module';
 import LoggerManager from './loggerManager';
@@ -495,29 +493,12 @@ export default class App {
     }
 
 
+    // eslint-disable-next-line class-methods-use-this
     withNodeExec(cb) {
         const execPath = process.platform === 'win32' ? 'node.exe' : 'node';
-        const cwd = process.cwd();
+        const cwd = app.getAppPath();
 
-        if (!fs.existsSync(join(cwd, execPath))) {
-            const downloadUrlRoot = 'https://nodejs.org/download/release/';
-            const platform = process.platform === 'win32' ? 'win' : process.platform;
-            const { nodeVersion } = this.settings;
-            const extension = process.platform === 'win32' ? '.zip' : '.tar.gz';
-
-            const zipName = `node-${nodeVersion}-${platform}-${process.arch}`;
-            const downloadUrl = `${downloadUrlRoot}${nodeVersion}/${zipName}${extension}`;
-
-            if (!fs.existsSync(join(cwd, zipName))) {
-                this.l.info(`fullStack: download url from ${downloadUrl}`);
-                const stream = request(downloadUrl).pipe(unzipper.Extract({ path: cwd }));
-                stream.on('finish', () => cb(join(zipName, execPath)));
-            } else {
-                cb(join(zipName, execPath));
-            }
-        } else {
-            cb(execPath);
-        }
+        cb(join(cwd, execPath));
     }
 
     startFullStackServer(cb) {
