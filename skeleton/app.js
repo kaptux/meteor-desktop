@@ -120,8 +120,12 @@ export default class App {
 
         this.app.on('window-all-closed', () => {
             this.app.quit();
+        });
+
+        this.app.on('before-quit', () => {
+            this.l.debug('before-quit');
             if (this.fullStackServer) {
-                this.fullStackServer.kill('SIGINT');
+                this.fullStackServer.kill();
             }
         });
     }
@@ -516,7 +520,7 @@ export default class App {
 
         this.withNodeExec((execPath) => {
             this.l.info(`fullStack: node exec locate at ${execPath}`);
-            this.l.info(`fullStack: startin local server at ${env.ROOT_URL}`);
+            this.l.info(`fullStack: starting local server at ${env.ROOT_URL}`);
             this.fullStackServer = spawn(execPath, [join(app.getAppPath(), 'meteor', 'main.js')], {
                 cwd: process.cwd(),
                 env
@@ -529,7 +533,7 @@ export default class App {
 
             const MAX_NUM_ATTEMPTS = 60;
             let attempt = 0;
-            const checkServerRunning = setInterval(() => {
+            const checkServerRunning = () => {
                 this.l.info(`fullStack: ping ${env.ROOT_URL}`);
                 attempt += 1;
                 request(env.ROOT_URL, (error, response) => {
@@ -538,14 +542,15 @@ export default class App {
 
                         this.l.info(`fullStack: localServer started at ${env.ROOT_URL}`);
                         cb(env.PORT);
+                    } else if (attempt <= MAX_NUM_ATTEMPTS) {
+                        checkServerRunning();
+                    } else {
+                        this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
                     }
                 });
+            };
 
-                if (attempt > MAX_NUM_ATTEMPTS) {
-                    clearInterval(checkServerRunning);
-                    this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
-                }
-            }, 1000);
+            checkServerRunning();
         });
     }
 

@@ -44,8 +44,8 @@ npm run desktop -- build-installer --full-stack --production
 
 ## TODOS
 
-- [x] Check win installer
-- [] Check macOs installer
+- [X] Check win installer
+- [X] Check macOs installer
 - [] Check linux installer
 - [] Check autoupadate.
 - [] Improve the feedbak in the splash screen. (download node version, starting local server, ...)
