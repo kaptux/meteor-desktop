@@ -534,16 +534,14 @@ export default class App {
             const MAX_NUM_ATTEMPTS = 60;
             let attempt = 0;
             const checkServerRunning = () => {
-                this.l.info(`fullStack: ping ${env.ROOT_URL}`);
+                this.l.info(`fullStack2: ping ${env.ROOT_URL}`);
                 attempt += 1;
                 request(env.ROOT_URL, (error, response) => {
                     if (!error && response.statusCode === 200) {
-                        clearInterval(checkServerRunning);
-
                         this.l.info(`fullStack: localServer started at ${env.ROOT_URL}`);
                         cb(env.PORT);
                     } else if (attempt <= MAX_NUM_ATTEMPTS) {
-                        checkServerRunning();
+                        setTimeout(checkServerRunning, 2000);
                     } else {
                         this.l.error(`fullStack: localServer not started. Check PORT:${env.PORT} is free and MONGO_URL:${env.MONGO_URL} reachable`)
                     }
